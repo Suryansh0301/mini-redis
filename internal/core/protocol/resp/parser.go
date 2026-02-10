@@ -2,12 +2,14 @@ package resp
 
 import (
 	"fmt"
+
 	"github.com/suryansh0301/mini-redis/internal/constants"
 )
 
 type ParseResp struct {
 	result        constants.ResultType
 	value         string
+	isEmpty       bool
 	bytesConsumed int
 	err           error
 }
@@ -15,33 +17,17 @@ type ParseResp struct {
 func getParseNeedMoreDataResp() ParseResp {
 	return ParseResp{
 		result:        constants.ResultTypeNeedMoreData,
-		value:         "",
 		bytesConsumed: 0,
-		err:           nil,
 	}
 }
 
 func getParseErrorResp(err error) ParseResp {
 	return ParseResp{
 		result:        constants.ResultTypeError,
-		value:         "",
 		bytesConsumed: 0,
 		err:           err,
 	}
 }
-
-/*
-TEST CASES:-
-\r\n
-+OK\r\n
-?\r\n
-+OK\r\n+PONG\r\n
-$3\r\nfoo\r\n
-:-\r\n
-:00001\r\n
-$-1\r\n -> null bulk string a valid case
-$0\r\n\r\n -> empty bulk string also a valid case
-*/
 
 func Parse(buffer []byte) ParseResp {
 	if len(buffer) == 0 {
@@ -54,120 +40,134 @@ func Parse(buffer []byte) ParseResp {
 		return getParseNeedMoreDataResp()
 	}
 
-	return checkBuffer(typeByte, index,buffer)
-
+	return checkBuffer(typeByte, index, buffer[1:])
 }
 
-func checkBuffer(typeByte byte,index int, bufferValue []byte) ParseResp {
+func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 	switch typeByte {
+
 	case '+':
-		for i := range bufferValue[:index] {
+		for i := 0; i < index; i++ {
 			if bufferValue[i] == '\r' || bufferValue[i] == '\n' {
-				return getParseErrorResp(fmt.Errorf("invalid value received in simple string : %q", bufferValue))
+				return getParseErrorResp(fmt.Errorf("invalid simple string"))
 			}
 		}
-
 		return ParseResp{
 			result:        constants.ResultTypeSuccess,
-			value:         string(bufferValue[index]),
-			bytesConsumed: 1 + len(bufferValue),
-			err:           nil,
+			value:         string(bufferValue[:index]),
+			bytesConsumed: 1 + index + 2,
 		}
+
 	case '-':
 		return ParseResp{
 			result:        constants.ResultTypeSuccess,
 			value:         string(bufferValue[:index]),
-			bytesConsumed: 1 + len(bufferValue),
-			err:           nil,
+			bytesConsumed: 1 + index + 2,
 		}
+
 	case ':':
-		if len(bufferValue[:index]) == 0 {
-			return getParseErrorResp(fmt.Errorf("empty value received in simple integer"))
+		if index == 0 {
+			return getParseErrorResp(fmt.Errorf("empty integer"))
 		}
 
-		if len(bufferValue[:index]) > 1 && bufferValue[0] == '0' {
-			return getParseErrorResp(fmt.Errorf("invalid value received in simple integer : %q", bufferValue))
-		}
+		start := 0
+		sign := ""
 
-		for i := range bufferValue[:index] {
-			if i == 0 && (bufferValue[i] == '-' || bufferValue[i] == '+') {
-				if len(bufferValue) == 1 {
-					return getParseErrorResp(fmt.Errorf("invalid value received in simple string : %q", bufferValue))
-				}
-				continue
+		if bufferValue[0] == '+' || bufferValue[0] == '-' {
+			if index == 1 {
+				return getParseErrorResp(fmt.Errorf("invalid integer"))
 			}
+			sign = string(bufferValue[0])
+			start = 1
+		}
 
+		if index-start > 1 && bufferValue[start] == '0' {
+			return getParseErrorResp(fmt.Errorf("invalid integer"))
+		}
+
+		for i := start; i < index; i++ {
 			if bufferValue[i] < '0' || bufferValue[i] > '9' {
-				return getParseErrorResp(fmt.Errorf("invalid value received in simple integer : %q", bufferValue)))
+				return getParseErrorResp(fmt.Errorf("invalid integer"))
 			}
 		}
+
 		return ParseResp{
 			result:        constants.ResultTypeSuccess,
-			value:         string(bufferValue[:index]),
-			bytesConsumed: 1 + len(bufferValue),
-			err:           nil,
+			value:         sign + string(bufferValue[start:index]),
+			bytesConsumed: 1 + index + 2,
 		}
-		case '$':
-			if len(bufferValue) == 0 {
-				return getParseErrorResp(fmt.Errorf("empty value received in bulk string"))
-			}
 
-			if len(bufferValue[:index]) == 2 && string(bufferValue[:index]) == "-1" {
-				return ParseResp{
-					result:        constants.ResultTypeSuccess,
-					value:         "", //in my opinion it should be empty because it is a null string
-					bytesConsumed: 1 + len(bufferValue),
-					err:           nil,
-				}
-			}
+	case '$':
+		if index == 0 {
+			return getParseErrorResp(fmt.Errorf("empty bulk length"))
+		}
 
-			if bufferValue[0] == '0' {
-				if len(bufferValue[:index]) == 1 {
-					return ParseResp{
-						result:        constants.ResultTypeSuccess,
-						value:         "", //in my opinion it should be empty because it is a null string
-						bytesConsumed: 1 + len(bufferValue) ,
-						err:           nil,
-					}
-				}
-
-				return getParseErrorResp(fmt.Errorf("invalid value received in bulk string : %q", bufferValue))
-			}
-
-			length:=0
-			for i := range bufferValue[:index] {
-				if bufferValue[i] < '1' || bufferValue[i] > '9' {
-					return getParseErrorResp(fmt.Errorf("invalid value received in bulk string : %q", bufferValue))
-				}
-				length=length*10+int(bufferValue[i])
-			}
-
-			if length+2 > len(bufferValue[index+2:]) {
-				return getParseNeedMoreDataResp()
-			}
-
+		// null bulk string
+		if index == 2 && string(bufferValue[:index]) == "-1" {
 			return ParseResp{
 				result:        constants.ResultTypeSuccess,
-				value:         string(bufferValue[index+2 : length]),
-				bytesConsumed: 1 + len(bufferValue) ,
-				err:           nil,
+				bytesConsumed: 1 + index + 2,
 			}
+		}
 
+		// reject "-<anything else>"
+		if bufferValue[0] == '-' {
+			return getParseErrorResp(fmt.Errorf("invalid bulk length"))
+		}
 
+		if index > 1 && bufferValue[0] == '0' {
+			return getParseErrorResp(fmt.Errorf("invalid bulk length"))
+		}
+
+		length := 0
+		for i := 0; i < index; i++ {
+			if bufferValue[i] < '0' || bufferValue[i] > '9' {
+				return getParseErrorResp(fmt.Errorf("invalid bulk length"))
+			}
+			length = length*10 + int(bufferValue[i]-'0')
+		}
+
+		payloadStart := index + 2
+		required := payloadStart + length + 2
+
+		if len(bufferValue) < required {
+			return getParseNeedMoreDataResp()
+		}
+
+		// empty bulk string
+		if length == 0 {
+			if bufferValue[payloadStart] != '\r' || bufferValue[payloadStart+1] != '\n' {
+				return getParseErrorResp(fmt.Errorf("invalid bulk string"))
+			}
+			return ParseResp{
+				result:        constants.ResultTypeSuccess,
+				isEmpty:       true,
+				bytesConsumed: 1 + index + 4,
+			}
+		}
+
+		// trailing CRLF check
+		if bufferValue[payloadStart+length] != '\r' ||
+			bufferValue[payloadStart+length+1] != '\n' {
+			return getParseErrorResp(fmt.Errorf("invalid bulk string"))
+		}
+
+		return ParseResp{
+			result:        constants.ResultTypeSuccess,
+			value:         string(bufferValue[payloadStart : payloadStart+length]),
+			bytesConsumed: 1 + index + 2 + length + 2,
+		}
 
 	default:
-		return getParseErrorResp(fmt.Errorf("invalid type received: %q", typeByte))
+		return getParseErrorResp(fmt.Errorf("invalid type byte"))
 	}
 }
 
-func readLine(buffer []byte) (index int) {
-	for i := range buffer {
-		if buffer[i] == '\r' {
-			if i+1 < len(buffer) && buffer[i+1] == '\n' {
-				return i
-			}
+func readLine(buffer []byte) int {
+	for i := 0; i+1 < len(buffer); i++ {
+		if buffer[i] == '\r' && buffer[i+1] == '\n' {
+			return i
 		}
 	}
-
 	return -1
 }
