@@ -36,3 +36,7 @@ func (r *RespValue) IsEmpty() bool {
 func WrongNumberOfArgumentsError(command string) string {
 	return fmt.Sprintf("ERR wrong number of arguments for '%s' command", command)
 }
+
+func ProtocolError(errMessage string) error {
+	return fmt.Errorf("protocol error: %s", errMessage)
+}

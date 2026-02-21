@@ -1,7 +1,6 @@
 package resp
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/suryansh0301/mini-redis/internal/core/common"
@@ -50,7 +49,7 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 	case '+':
 		for i := 0; i < index; i++ {
 			if bufferValue[i] == '\r' || bufferValue[i] == '\n' {
-				return getParseErrorResp(fmt.Errorf("protocol error: invalid simple string"))
+				return getParseErrorResp(common.ProtocolError("invalid simple string"))
 			}
 		}
 
@@ -75,12 +74,12 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 
 	case ':':
 		if index == 0 {
-			return getParseErrorResp(fmt.Errorf("protocol error: invalid integer"))
+			return getParseErrorResp(common.ProtocolError("invalid integer"))
 		}
 
 		val, err := strconv.ParseInt(string(bufferValue[:index]), 10, 64)
 		if err != nil {
-			return getParseErrorResp(fmt.Errorf("protocol error: invalid integer"))
+			return getParseErrorResp(common.ProtocolError("invalid integer"))
 		}
 
 		return ParseResp{
@@ -94,12 +93,12 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 
 	case '$':
 		if index == 0 {
-			return getParseErrorResp(fmt.Errorf("protocol error: invalid bulk length"))
+			return getParseErrorResp(common.ProtocolError("invalid bulk length"))
 		}
 
 		length64, err := strconv.ParseInt(string(bufferValue[:index]), 10, 64)
 		if err != nil {
-			return getParseErrorResp(fmt.Errorf("protocol error: invalid bulk length"))
+			return getParseErrorResp(common.ProtocolError("invalid bulk length"))
 		}
 
 		// Null bulk string
@@ -115,7 +114,7 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		}
 
 		if length64 < 0 {
-			return getParseErrorResp(fmt.Errorf("protocol error: invalid bulk length"))
+			return getParseErrorResp(common.ProtocolError("invalid bulk length"))
 		}
 
 		length := int(length64)
@@ -128,7 +127,7 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 
 		if bufferValue[payloadStart+length] != '\r' ||
 			bufferValue[payloadStart+length+1] != '\n' {
-			return getParseErrorResp(fmt.Errorf("protocol error: invalid bulk string"))
+			return getParseErrorResp(common.ProtocolError("invalid bulk string"))
 		}
 
 		return ParseResp{
@@ -142,12 +141,12 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 
 	case '*':
 		if index == 0 {
-			return getParseErrorResp(fmt.Errorf("protocol error: invalid array length"))
+			return getParseErrorResp(common.ProtocolError("invalid array length"))
 		}
 
 		length64, err := strconv.ParseInt(string(bufferValue[:index]), 10, 64)
 		if err != nil {
-			return getParseErrorResp(fmt.Errorf("protocol error: invalid array length"))
+			return getParseErrorResp(common.ProtocolError("invalid array length"))
 		}
 
 		if length64 == -1 {
@@ -162,7 +161,7 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		}
 
 		if length64 < 0 {
-			return getParseErrorResp(fmt.Errorf("protocol error: invalid array length"))
+			return getParseErrorResp(common.ProtocolError("invalid array length"))
 		}
 
 		length := int(length64)
@@ -198,7 +197,7 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		}
 
 	default:
-		return getParseErrorResp(fmt.Errorf("protocol error: invalid RESP type"))
+		return getParseErrorResp(common.ProtocolError("invalid RESP type"))
 	}
 }
 
