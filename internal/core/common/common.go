@@ -1,13 +1,16 @@
 package common
 
-import "github.com/suryansh0301/mini-redis/internal/enums"
+import (
+	"fmt"
+
+	"github.com/suryansh0301/mini-redis/internal/enums"
+)
 
 type RespValue struct {
 	Type   enums.RespType
 	Str    string
 	Int    int64
 	Array  []*RespValue
-	Error  error
 	IsNull bool
 }
 
@@ -23,7 +26,13 @@ func (r *RespValue) IsEmpty() bool {
 		return len(r.Str) == 0
 	case enums.BulkStringRespType:
 		return len(r.Str) == 0
+	case enums.ErrorRespType:
+		return len(r.Str) == 0
 	default:
 		return false
 	}
+}
+
+func WrongNumberOfArgumentsError(command string) string {
+	return fmt.Sprintf("ERR wrong number of arguments for '%s' command", command)
 }

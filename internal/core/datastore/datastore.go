@@ -21,8 +21,8 @@ func (e *Executor) Execute(command commands.Command) common.RespValue {
 	handler := commands.CommandHandler(command.Name)
 	if handler == nil {
 		return common.RespValue{
-			Type:  enums.ErrorRespType,
-			Error: fmt.Errorf("unknown command %s", command.Name),
+			Type: enums.ErrorRespType,
+			Str:  fmt.Sprintf("ERR unknown command '%s'", command.Name),
 		}
 	}
 	return handler(command, e.dataStore)
