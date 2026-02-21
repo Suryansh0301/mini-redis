@@ -19,10 +19,11 @@ func (r *RespValue) IsEmpty() bool {
 	switch r.Type {
 	case enums.ArrayRespType:
 		return len(r.Array) == 0
-	case enums.StringRespType:
+	case enums.SimpleStringRespType:
+		return len(r.Str) == 0
+	case enums.BulkStringRespType:
 		return len(r.Str) == 0
 	default:
-		// as for other cases currently there is no value considered to be empty
 		return false
 	}
 }

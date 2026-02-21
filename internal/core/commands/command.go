@@ -42,7 +42,7 @@ func HandlerPing(command Command, _ map[string]string) common.RespValue {
 		}
 	}
 	return common.RespValue{
-		Type: enums.StringRespType,
+		Type: enums.SimpleStringRespType,
 		Str:  "PONG",
 	}
 }
@@ -57,7 +57,7 @@ func HandlerEcho(command Command, _ map[string]string) common.RespValue {
 	}
 
 	return common.RespValue{
-		Type: enums.StringRespType,
+		Type: enums.BulkStringRespType,
 		Str:  command.Args[0],
 	}
 
@@ -73,7 +73,7 @@ func HandlerSet(command Command, store map[string]string) common.RespValue {
 	}
 	store[command.Args[0]] = command.Args[1]
 	return common.RespValue{
-		Type: enums.StringRespType,
+		Type: enums.SimpleStringRespType,
 		Str:  "OK",
 	}
 }
@@ -89,12 +89,12 @@ func HandlerGet(command Command, store map[string]string) common.RespValue {
 	value, exists := store[command.Args[0]]
 	if !exists {
 		return common.RespValue{
-			Type:   enums.StringRespType,
+			Type:   enums.BulkStringRespType,
 			IsNull: true,
 		}
 	}
 	return common.RespValue{
-		Type: enums.StringRespType,
+		Type: enums.BulkStringRespType,
 		Str:  value,
 	}
 }

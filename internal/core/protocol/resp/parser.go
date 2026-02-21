@@ -2,9 +2,10 @@ package resp
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/suryansh0301/mini-redis/internal/core/common"
 	"github.com/suryansh0301/mini-redis/internal/enums"
-	"strconv"
 )
 
 type ParseResp struct {
@@ -55,7 +56,7 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		return ParseResp{
 			statusCode: enums.SuccessStatusCode,
 			resp: &common.RespValue{
-				Type: enums.StringRespType,
+				Type: enums.SimpleStringRespType,
 				Str:  string(bufferValue[:index]),
 			},
 			bytesConsumed: 1 + index + 2,
@@ -124,7 +125,7 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 			return ParseResp{
 				statusCode: enums.SuccessStatusCode,
 				resp: &common.RespValue{
-					Type:   enums.StringRespType,
+					Type:   enums.BulkStringRespType,
 					IsNull: true,
 				},
 				bytesConsumed: 1 + index + 2,
@@ -163,7 +164,7 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 			return ParseResp{
 				statusCode: enums.SuccessStatusCode,
 				resp: &common.RespValue{
-					Type: enums.StringRespType,
+					Type: enums.BulkStringRespType,
 				},
 				bytesConsumed: 1 + index + 4,
 			}
@@ -178,7 +179,7 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		return ParseResp{
 			statusCode: enums.SuccessStatusCode,
 			resp: &common.RespValue{
-				Type: enums.StringRespType,
+				Type: enums.BulkStringRespType,
 				Str:  string(bufferValue[payloadStart : payloadStart+length]),
 			},
 			bytesConsumed: 1 + index + 2 + length + 2,
