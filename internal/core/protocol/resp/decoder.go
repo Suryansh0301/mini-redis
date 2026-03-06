@@ -9,24 +9,24 @@ import (
 )
 
 func Decoder(parsedResp ParseResp) (commands.Command, error) {
-	if parsedResp.resp == nil {
+	if parsedResp.Resp == nil {
 		return commands.Command{}, common.ProtocolError("empty request")
 	}
 
-	if parsedResp.resp.Type != enums.ArrayRespType {
+	if parsedResp.Resp.Type != enums.ArrayRespType {
 		return commands.Command{}, common.ProtocolError("command must be array")
 	}
 
-	if parsedResp.resp.IsNull {
+	if parsedResp.Resp.IsNull {
 		return commands.Command{}, common.ProtocolError("null array not allowed")
 	}
 
-	if len(parsedResp.resp.Array) == 0 {
+	if len(parsedResp.Resp.Array) == 0 {
 		return commands.Command{}, common.ProtocolError("empty command array")
 	}
 
 	// Command name
-	cmdValue := parsedResp.resp.Array[0]
+	cmdValue := parsedResp.Resp.Array[0]
 
 	if cmdValue.Type != enums.BulkStringRespType {
 		return commands.Command{}, common.ProtocolError("command name must be bulk string")
@@ -39,10 +39,10 @@ func Decoder(parsedResp ParseResp) (commands.Command, error) {
 	commandName := strings.ToUpper(cmdValue.Str)
 
 	// Arguments
-	args := make([]string, 0, len(parsedResp.resp.Array)-1)
+	args := make([]string, 0, len(parsedResp.Resp.Array)-1)
 
-	for i := 1; i < len(parsedResp.resp.Array); i++ {
-		arg := parsedResp.resp.Array[i]
+	for i := 1; i < len(parsedResp.Resp.Array); i++ {
+		arg := parsedResp.Resp.Array[i]
 
 		if arg.Type != enums.BulkStringRespType {
 			return commands.Command{}, common.ProtocolError("arguments must be bulk strings")
