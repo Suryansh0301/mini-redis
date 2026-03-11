@@ -14,6 +14,18 @@ type ParseResp struct {
 	err           error
 }
 
+func (p *ParseResp) StatusCode() enums.StatusCode {
+	return p.statusCode
+}
+
+func (p *ParseResp) BytesConsumed() int {
+	return p.bytesConsumed
+}
+
+func (p *ParseResp) Error() error {
+	return p.err
+}
+
 func getParseNeedMoreDataResp() ParseResp {
 	return ParseResp{
 		statusCode:    enums.NeedMoreDataStatusCode,

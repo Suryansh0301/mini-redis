@@ -2,49 +2,102 @@ package main
 
 import (
 	"bufio"
-	"fmt"
-	parser "github.com/suryansh0301/mini-redis/internal/core/protocol/resp"
 	"log/slog"
 	"net"
+
+	"github.com/suryansh0301/mini-redis/internal/core/common"
+	"github.com/suryansh0301/mini-redis/internal/core/datastore"
+	parser "github.com/suryansh0301/mini-redis/internal/core/protocol/resp"
 )
 
+type client struct {
+	Reader       *bufio.Reader
+	Writer       *bufio.Writer
+	ParserBuffer []byte
+	ReadBuffer   []byte
+	WriteBuffer  []byte
+}
+
+func NewClient(connection net.Conn) *client {
+	reader := bufio.NewReader(connection)
+	writer := bufio.NewWriter(connection)
+
+	return &client{
+		Reader:       reader,
+		Writer:       writer,
+		ParserBuffer: make([]byte, 0, 4096),
+		ReadBuffer:   make([]byte, 1024, 4096),
+		WriteBuffer:  make([]byte, 1024, 4096),
+	}
+}
+
+func (c *client) read() (int, error) {
+	n, err := c.Reader.Read(c.ReadBuffer)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func (c *client) appendParseBuffer(n int) {
+	c.ParserBuffer = append(c.ParserBuffer, c.ReadBuffer[:n]...)
+}
+
 func main() {
-	listener, err := net.Listen("tcp", ":8080")
+	listener, err := net.Listen("tcp", ":6379")
 	if err != nil {
 		panic(err)
 	}
 	slog.SetLogLoggerLevel(-4)
-	slog.Debug("Listening on port 8080")
+	slog.Debug("Listening on port 6379")
 
+	exec := datastore.NewExecutor()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			panic(err)
 		}
 
-		go handleConnection(conn)
+		client := NewClient(conn)
+		go client.handleConnection(conn, exec)
 	}
 }
 
-func handleConnection(conn net.Conn) {
+func (c *client) handleConnection(conn net.Conn, exec *datastore.Executor) {
 
 	defer conn.Close()
-	reader := bufio.NewReader(conn)
-	//writer := bufio.NewWriter(conn)
-	readBuffer := make([]byte, 1024)
-	//writeBuffer := make([]byte, 1024) //placeholder
+
 	for {
-		n, err := reader.Read(readBuffer)
+		n, err := c.read()
 		if err != nil {
 			return
 		}
-		buffer := readBuffer[:n]
-		fmt.Println(string(buffer))
-		response := parser.Parse(buffer)
-		fmt.Printf("%#+v", response)
-		fmt.Printf("%#+v", response.Resp)
-		value, err := parser.Decoder(response)
-		fmt.Printf("%#+v,%+v", value, err)
+
+		c.appendParseBuffer(n)
+
+		for len(c.ParserBuffer) > 0 {
+			response := parser.Parse(c.ParserBuffer)
+			if response.Error() != nil {
+				// we receive an error response
+				common.ProtocolError(response.Error().Error())
+				return
+			}
+
+			if response.BytesConsumed() == 0 {
+				// we need more data hence we break and wait for the next read
+				break
+			}
+
+			c.ParserBuffer = c.ParserBuffer[response.BytesConsumed():]
+			value, err := parser.Decoder(response)
+			if err != nil {
+				common.ProtocolError(err.Error())
+				return
+			}
+
+			resp := exec.Execute(value)
+		}
+
 		//execution -> for example the response is set into write buffer (just to figure out things)
 		//_, err = writer.Write(writeBuffer)
 		//if err != nil {

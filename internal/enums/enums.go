@@ -1,5 +1,7 @@
 package enums
 
+import "strings"
+
 type StatusCode string
 
 const (
@@ -39,5 +41,5 @@ var stringToCommandName = map[string]CommandName{
 }
 
 func StringToCommandName(commandName string) CommandName {
-	return stringToCommandName[commandName]
+	return stringToCommandName[strings.ToLower(commandName)]
 }
