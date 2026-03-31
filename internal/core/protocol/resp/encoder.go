@@ -14,22 +14,22 @@ func init() {
 	encoderHandler = make(map[enums.RespType]func(value common.RespValue) []byte)
 
 	encoderHandler[enums.SimpleStringRespType] = func(value common.RespValue) []byte {
-		response := fmt.Sprintf("+" + value.Str + "\r\n")
+		response := fmt.Sprintf("+%s\r\n", value.Str)
 		return []byte(response)
 	}
 
 	encoderHandler[enums.IntRespType] = func(value common.RespValue) []byte {
-		response := fmt.Sprintf(":" + strconv.FormatInt(value.Int, 10) + "\r\n")
+		response := fmt.Sprintf(":%s\r\n", strconv.FormatInt(value.Int, 10))
 		return []byte(response)
 	}
 
 	encoderHandler[enums.BulkStringRespType] = func(value common.RespValue) []byte {
-		response := fmt.Sprintf("$" + (value.Str) + "\r\n" + value.Str + "\r\n")
+		response := fmt.Sprintf("$%s\r\n%s\r\n", strconv.Itoa(len(value.Str)), value.Str)
 		return []byte(response)
 	}
 
 	encoderHandler[enums.ErrorRespType] = func(value common.RespValue) []byte {
-		response := fmt.Sprintf("-" + value.Str + "\r\n")
+		response := fmt.Sprintf("-%s\r\n", value.Str)
 		return []byte(response)
 	}
 }
