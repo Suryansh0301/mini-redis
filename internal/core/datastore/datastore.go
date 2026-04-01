@@ -9,12 +9,19 @@ import (
 )
 
 type Executor struct {
-	dataStore map[string]string
+	dataStore    map[string]string
+	ExecutorChan chan Value
+}
+
+type Value struct {
+	ResponseChan chan common.RespValue
+	Command      commands.Command
 }
 
 func NewExecutor() *Executor {
 	dataStore := make(map[string]string)
-	return &Executor{dataStore}
+	executorChan := make(chan Value, 1024)
+	return &Executor{dataStore, executorChan}
 }
 
 func (e *Executor) Execute(command commands.Command) common.RespValue {

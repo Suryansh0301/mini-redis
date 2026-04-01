@@ -14,6 +14,7 @@ import (
 type client struct {
 	Reader       *bufio.Reader
 	Writer       *bufio.Writer
+	ResponseChan chan common.RespValue
 	ParserBuffer []byte
 	ReadBuffer   []byte
 	WriteBuffer  []byte
@@ -26,6 +27,7 @@ func newClient(connection net.Conn) *client {
 	return &client{
 		Reader:       reader,
 		Writer:       writer,
+		ResponseChan: make(chan common.RespValue, 256),
 		ParserBuffer: make([]byte, 0, 4096),
 		ReadBuffer:   make([]byte, 1024, 4096),
 		WriteBuffer:  make([]byte, 1024, 4096),
@@ -53,6 +55,14 @@ func main() {
 	slog.Debug("Listening on port 6379")
 
 	exec := datastore.NewExecutor()
+
+	go func() {
+		for value := range exec.ExecutorChan {
+			response := exec.Execute(value.Command)
+			value.ResponseChan <- response
+		}
+	}()
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -68,6 +78,23 @@ func (c *client) handleConnection(conn net.Conn, exec *datastore.Executor) {
 
 	defer conn.Close()
 
+	go func() {
+		for resp := range c.ResponseChan {
+			byteResp := parser.Encoder(resp)
+			c.WriteBuffer = append(c.WriteBuffer, byteResp...)
+			n, err := c.Writer.Write(c.WriteBuffer)
+			if err != nil {
+				return
+			}
+			if n > 0 {
+				err = c.Writer.Flush()
+				if err != nil {
+					return
+				}
+			}
+		}
+	}()
+
 	for {
 		n, err := c.read()
 		if err != nil {
@@ -80,7 +107,9 @@ func (c *client) handleConnection(conn net.Conn, exec *datastore.Executor) {
 			response := parser.Parse(c.ParserBuffer)
 			if response.Error() != nil {
 				// we receive an error response
-				common.ProtocolError(response.Error().Error())
+				if err = c.handleError(response.Error().Error()); err != nil {
+
+				}
 				return
 			}
 
@@ -92,27 +121,31 @@ func (c *client) handleConnection(conn net.Conn, exec *datastore.Executor) {
 			c.ParserBuffer = c.ParserBuffer[response.BytesConsumed():]
 			value, err := parser.Decoder(response)
 			if err != nil {
-				common.ProtocolError(err.Error())
+				if err = c.handleError(err.Error()); err != nil {
+
+				}
 				return
 			}
 
-			resp := exec.Execute(value)
-			fmt.Println(resp)
-			byteResp := parser.Encoder(resp)
-			c.WriteBuffer = append(c.WriteBuffer, byteResp...)
-			n, err = c.Writer.Write(c.WriteBuffer)
-			if err != nil {
-				common.ProtocolError(err.Error())
-				return
-			}
-			if n > 0 {
-				err = c.Writer.Flush()
-				if err != nil {
-					common.ProtocolError(err.Error())
-					return
-				}
+			exec.ExecutorChan <- datastore.Value{
+				Command:      value,
+				ResponseChan: c.ResponseChan,
 			}
 
 		}
 	}
+
+}
+
+func (c *client) handleError(errMessage string) error {
+	response := fmt.Sprintf("-ERR %s\r\n", errMessage)
+	_, err := c.Writer.Write([]byte(response))
+	if err != nil {
+		return err
+	}
+	err = c.Writer.Flush()
+	if err != nil {
+		return err
+	}
+	return nil
 }
