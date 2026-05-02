@@ -1,51 +1,58 @@
 package resp
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/suryansh0301/mini-redis/internal/core/commands"
+	"github.com/suryansh0301/mini-redis/internal/core/common"
 	"github.com/suryansh0301/mini-redis/internal/enums"
 )
 
-func Decoder(parsedResp ParseResp) (command commands.Command, err error) {
-	if !parsedResp.resp.IsType(enums.ArrayRespType) {
-		err = fmt.Errorf("expected array response, got %+v", parsedResp.resp.Type)
-		return
+func Decoder(parsedResp ParseResp) (commands.Command, error) {
+	if parsedResp.resp == nil {
+		return commands.Command{}, common.ProtocolError("empty request")
 	}
 
-	if parsedResp.resp.IsNull || parsedResp.resp.IsEmpty() {
-		err = fmt.Errorf("invalid array response")
-		return
-
+	if parsedResp.resp.Type != enums.ArrayRespType {
+		return commands.Command{}, common.ProtocolError("command must be array")
 	}
 
-	commandNameRespValue := parsedResp.resp.Array[0]
-	if !commandNameRespValue.IsType(enums.SimpleStringRespType) {
-		err = fmt.Errorf("expected command name, got %+v", commandNameRespValue.Type)
-		return
+	if parsedResp.resp.IsNull {
+		return commands.Command{}, common.ProtocolError("null array not allowed")
 	}
 
-	if commandNameRespValue.IsNull || commandNameRespValue.IsEmpty() {
-		err = fmt.Errorf("invalid command name")
-		return
+	if len(parsedResp.resp.Array) == 0 {
+		return commands.Command{}, common.ProtocolError("empty command array")
 	}
-	commandName := strings.ToUpper(commandNameRespValue.Str)
 
-	commandArgsParsedResp := parsedResp.resp.Array[1:]
+	// Command name
+	cmdValue := parsedResp.resp.Array[0]
 
-	args := make([]string, 0, len(commandArgsParsedResp))
-	for i := 0; i < len(commandArgsParsedResp); i++ {
-		if !commandArgsParsedResp[i].IsType(enums.SimpleStringRespType) {
-			err = fmt.Errorf("expected command args, got %+v", commandArgsParsedResp[i].Type)
-			return
+	if cmdValue.Type != enums.BulkStringRespType {
+		return commands.Command{}, common.ProtocolError("command name must be bulk string")
+	}
+
+	if cmdValue.IsNull || len(cmdValue.Str) == 0 {
+		return commands.Command{}, common.ProtocolError("invalid command name")
+	}
+
+	commandName := strings.ToUpper(cmdValue.Str)
+
+	// Arguments
+	args := make([]string, 0, len(parsedResp.resp.Array)-1)
+
+	for i := 1; i < len(parsedResp.resp.Array); i++ {
+		arg := parsedResp.resp.Array[i]
+
+		if arg.Type != enums.BulkStringRespType {
+			return commands.Command{}, common.ProtocolError("arguments must be bulk strings")
 		}
 
-		if commandArgsParsedResp[i].IsNull {
-			err = fmt.Errorf("invalid command args")
-			return
+		if arg.IsNull {
+			return commands.Command{}, common.ProtocolError("null argument not allowed")
 		}
-		args = append(args, commandArgsParsedResp[i].Str)
+
+		args = append(args, arg.Str)
 	}
 
 	return commands.Command{
