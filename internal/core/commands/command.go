@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/suryansh0301/mini-redis/internal/core/common"
@@ -35,10 +34,9 @@ func CommandHandler(commandName string) func(Command, map[string]string) common.
 
 func HandlerPing(command Command, _ map[string]string) common.RespValue {
 	if len(command.Args) != 0 {
-		err := fmt.Errorf("arguments present in ping command")
 		return common.RespValue{
-			Type:  enums.ErrorRespType,
-			Error: err,
+			Type: enums.ErrorRespType,
+			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
 		}
 	}
 	return common.RespValue{
@@ -49,10 +47,9 @@ func HandlerPing(command Command, _ map[string]string) common.RespValue {
 
 func HandlerEcho(command Command, _ map[string]string) common.RespValue {
 	if len(command.Args) != 1 {
-		err := fmt.Errorf("echo command requires exactly one argument")
 		return common.RespValue{
-			Type:  enums.ErrorRespType,
-			Error: err,
+			Type: enums.ErrorRespType,
+			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
 		}
 	}
 
@@ -65,10 +62,9 @@ func HandlerEcho(command Command, _ map[string]string) common.RespValue {
 
 func HandlerSet(command Command, store map[string]string) common.RespValue {
 	if len(command.Args) != 2 {
-		err := fmt.Errorf("set command requires exactly two argument")
 		return common.RespValue{
-			Type:  enums.ErrorRespType,
-			Error: err,
+			Type: enums.ErrorRespType,
+			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
 		}
 	}
 	store[command.Args[0]] = command.Args[1]
@@ -80,10 +76,9 @@ func HandlerSet(command Command, store map[string]string) common.RespValue {
 
 func HandlerGet(command Command, store map[string]string) common.RespValue {
 	if len(command.Args) != 1 {
-		err := fmt.Errorf("get command requires exactly one argument")
 		return common.RespValue{
-			Type:  enums.ErrorRespType,
-			Error: err,
+			Type: enums.ErrorRespType,
+			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
 		}
 	}
 	value, exists := store[command.Args[0]]
@@ -101,10 +96,9 @@ func HandlerGet(command Command, store map[string]string) common.RespValue {
 
 func HandlerIncr(command Command, store map[string]string) common.RespValue {
 	if len(command.Args) != 1 {
-		err := fmt.Errorf("incr command requires exactly one argument")
 		return common.RespValue{
-			Type:  enums.ErrorRespType,
-			Error: err,
+			Type: enums.ErrorRespType,
+			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
 		}
 	}
 	value, exists := store[command.Args[0]]
@@ -114,8 +108,8 @@ func HandlerIncr(command Command, store map[string]string) common.RespValue {
 	integer, err := strconv.Atoi(value)
 	if err != nil {
 		return common.RespValue{
-			Type:  enums.ErrorRespType,
-			Error: err,
+			Type: enums.ErrorRespType,
+			Str:  "ERR value is not an integer or out of range",
 		}
 	}
 	integer = integer + 1
@@ -128,10 +122,9 @@ func HandlerIncr(command Command, store map[string]string) common.RespValue {
 
 func HandlerDel(command Command, store map[string]string) common.RespValue {
 	if len(command.Args) != 1 {
-		err := fmt.Errorf("del command requires exactly one argument")
 		return common.RespValue{
-			Type:  enums.ErrorRespType,
-			Error: err,
+			Type: enums.ErrorRespType,
+			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
 		}
 	}
 	_, exists := store[command.Args[0]]

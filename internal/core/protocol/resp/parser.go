@@ -50,9 +50,10 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 	case '+':
 		for i := 0; i < index; i++ {
 			if bufferValue[i] == '\r' || bufferValue[i] == '\n' {
-				return getParseErrorResp(fmt.Errorf("invalid simple string"))
+				return getParseErrorResp(fmt.Errorf("protocol error: invalid simple string"))
 			}
 		}
+
 		return ParseResp{
 			statusCode: enums.SuccessStatusCode,
 			resp: &common.RespValue{
@@ -66,62 +67,43 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		return ParseResp{
 			statusCode: enums.SuccessStatusCode,
 			resp: &common.RespValue{
-				Type:  enums.ErrorRespType,
-				Error: fmt.Errorf(string(bufferValue[:index])),
+				Type: enums.ErrorRespType,
+				Str:  string(bufferValue[:index]),
 			},
 			bytesConsumed: 1 + index + 2,
 		}
 
 	case ':':
 		if index == 0 {
-			return getParseErrorResp(fmt.Errorf("empty integer"))
+			return getParseErrorResp(fmt.Errorf("protocol error: invalid integer"))
 		}
 
-		start := 0
-		sign := ""
-
-		if bufferValue[0] == '+' || bufferValue[0] == '-' {
-			if index == 1 {
-				return getParseErrorResp(fmt.Errorf("invalid integer"))
-			}
-			sign = string(bufferValue[0])
-			start = 1
-		}
-
-		if index-start > 1 && bufferValue[start] == '0' {
-			return getParseErrorResp(fmt.Errorf("invalid integer"))
-		}
-
-		for i := start; i < index; i++ {
-			if bufferValue[i] < '0' || bufferValue[i] > '9' {
-				return getParseErrorResp(fmt.Errorf("invalid integer"))
-			}
-		}
-
-		val, err := strconv.Atoi(string(bufferValue[start:index]))
+		val, err := strconv.ParseInt(string(bufferValue[:index]), 10, 64)
 		if err != nil {
-			return getParseErrorResp(fmt.Errorf("invalid integer"))
-		}
-		if sign == "-" {
-			val = val * -1
+			return getParseErrorResp(fmt.Errorf("protocol error: invalid integer"))
 		}
 
 		return ParseResp{
 			statusCode: enums.SuccessStatusCode,
 			resp: &common.RespValue{
 				Type: enums.IntRespType,
-				Int:  int64(val),
+				Int:  val,
 			},
 			bytesConsumed: 1 + index + 2,
 		}
 
 	case '$':
 		if index == 0 {
-			return getParseErrorResp(fmt.Errorf("empty bulk length"))
+			return getParseErrorResp(fmt.Errorf("protocol error: invalid bulk length"))
 		}
 
-		// null bulk string
-		if index == 2 && string(bufferValue[:index]) == "-1" {
+		length64, err := strconv.ParseInt(string(bufferValue[:index]), 10, 64)
+		if err != nil {
+			return getParseErrorResp(fmt.Errorf("protocol error: invalid bulk length"))
+		}
+
+		// Null bulk string
+		if length64 == -1 {
 			return ParseResp{
 				statusCode: enums.SuccessStatusCode,
 				resp: &common.RespValue{
@@ -132,23 +114,11 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 			}
 		}
 
-		// reject "-<anything else>"
-		if bufferValue[0] == '-' {
-			return getParseErrorResp(fmt.Errorf("invalid bulk length"))
+		if length64 < 0 {
+			return getParseErrorResp(fmt.Errorf("protocol error: invalid bulk length"))
 		}
 
-		if index > 1 && bufferValue[0] == '0' {
-			return getParseErrorResp(fmt.Errorf("invalid bulk length"))
-		}
-
-		length := 0
-		for i := 0; i < index; i++ {
-			if bufferValue[i] < '0' || bufferValue[i] > '9' {
-				return getParseErrorResp(fmt.Errorf("invalid bulk length"))
-			}
-			length = length*10 + int(bufferValue[i]-'0')
-		}
-
+		length := int(length64)
 		payloadStart := index + 2
 		required := payloadStart + length + 2
 
@@ -156,24 +126,9 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 			return getParseNeedMoreDataResp()
 		}
 
-		// empty bulk string
-		if length == 0 {
-			if bufferValue[payloadStart] != '\r' || bufferValue[payloadStart+1] != '\n' {
-				return getParseErrorResp(fmt.Errorf("invalid bulk string"))
-			}
-			return ParseResp{
-				statusCode: enums.SuccessStatusCode,
-				resp: &common.RespValue{
-					Type: enums.BulkStringRespType,
-				},
-				bytesConsumed: 1 + index + 4,
-			}
-		}
-
-		// trailing CRLF check
 		if bufferValue[payloadStart+length] != '\r' ||
 			bufferValue[payloadStart+length+1] != '\n' {
-			return getParseErrorResp(fmt.Errorf("invalid bulk string"))
+			return getParseErrorResp(fmt.Errorf("protocol error: invalid bulk string"))
 		}
 
 		return ParseResp{
@@ -187,75 +142,63 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 
 	case '*':
 		if index == 0 {
-			return getParseErrorResp(fmt.Errorf("empty array length"))
+			return getParseErrorResp(fmt.Errorf("protocol error: invalid array length"))
 		}
-		if bufferValue[0] == '0' {
-			if len(bufferValue[:index]) > 1 {
-				return getParseErrorResp(fmt.Errorf("invalid array length"))
-			}
+
+		length64, err := strconv.ParseInt(string(bufferValue[:index]), 10, 64)
+		if err != nil {
+			return getParseErrorResp(fmt.Errorf("protocol error: invalid array length"))
+		}
+
+		if length64 == -1 {
 			return ParseResp{
 				statusCode: enums.SuccessStatusCode,
 				resp: &common.RespValue{
-					Type:  enums.ArrayRespType,
-					Array: []*common.RespValue{},
+					Type:   enums.ArrayRespType,
+					IsNull: true,
 				},
 				bytesConsumed: 1 + index + 2,
 			}
 		}
 
-		if bufferValue[0] == '-' {
-			if len(bufferValue[:index]) == 1 {
-				return getParseErrorResp(fmt.Errorf("invalid array length"))
-			}
-			if bufferValue[1] == '1' && len(bufferValue[:index]) == 2 {
-				return ParseResp{
-					statusCode: enums.SuccessStatusCode,
-					resp: &common.RespValue{
-						Type:   enums.ArrayRespType,
-						IsNull: true,
-					},
-					bytesConsumed: 1 + index + 2,
-				}
-			}
-
-			return getParseErrorResp(fmt.Errorf("invalid array length"))
+		if length64 < 0 {
+			return getParseErrorResp(fmt.Errorf("protocol error: invalid array length"))
 		}
 
-		length := 0
-		for i := 0; i < index; i++ {
-			if bufferValue[i] < '0' || bufferValue[i] > '9' {
-				return getParseErrorResp(fmt.Errorf("invalid array length"))
-			}
-			length = length*10 + int(bufferValue[i]-'0')
-		}
+		length := int(length64)
 
 		totalConsumed := 1 + index + 2
 		cursor := index + 2
-		respValue := make([]*common.RespValue, 0, length)
+
+		values := make([]*common.RespValue, 0, length)
+
 		for i := 0; i < length; i++ {
 			response := Parse(bufferValue[cursor:])
+
 			if response.statusCode == enums.ErrorStatusCode {
 				return getParseErrorResp(response.err)
 			}
+
 			if response.statusCode == enums.NeedMoreDataStatusCode {
 				return getParseNeedMoreDataResp()
 			}
-			totalConsumed += response.bytesConsumed
+
+			values = append(values, response.resp)
 			cursor += response.bytesConsumed
-			respValue = append(respValue, response.resp)
+			totalConsumed += response.bytesConsumed
 		}
 
 		return ParseResp{
 			statusCode: enums.SuccessStatusCode,
 			resp: &common.RespValue{
 				Type:  enums.ArrayRespType,
-				Array: respValue,
+				Array: values,
 			},
 			bytesConsumed: totalConsumed,
 		}
 
 	default:
-		return getParseErrorResp(fmt.Errorf("invalid type byte"))
+		return getParseErrorResp(fmt.Errorf("protocol error: invalid RESP type"))
 	}
 }
 
