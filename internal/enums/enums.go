@@ -11,7 +11,8 @@ const (
 type RespType int
 
 const (
-	StringRespType RespType = iota
+	SimpleStringRespType RespType = iota
+	BulkStringRespType
 	IntRespType
 	ArrayRespType
 	ErrorRespType

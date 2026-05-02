@@ -21,7 +21,7 @@ func Decoder(parsedResp ParseResp) (command commands.Command, err error) {
 	}
 
 	commandNameRespValue := parsedResp.resp.Array[0]
-	if !commandNameRespValue.IsType(enums.StringRespType) {
+	if !commandNameRespValue.IsType(enums.SimpleStringRespType) {
 		err = fmt.Errorf("expected command name, got %+v", commandNameRespValue.Type)
 		return
 	}
@@ -36,7 +36,7 @@ func Decoder(parsedResp ParseResp) (command commands.Command, err error) {
 
 	args := make([]string, 0, len(commandArgsParsedResp))
 	for i := 0; i < len(commandArgsParsedResp); i++ {
-		if !commandArgsParsedResp[i].IsType(enums.StringRespType) {
+		if !commandArgsParsedResp[i].IsType(enums.SimpleStringRespType) {
 			err = fmt.Errorf("expected command args, got %+v", commandArgsParsedResp[i].Type)
 			return
 		}
