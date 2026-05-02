@@ -2,28 +2,37 @@ package resp
 
 import (
 	"fmt"
+	"strconv"
 
-	"github.com/suryansh0301/mini-redis/internal/constants"
+	"github.com/suryansh0301/mini-redis/internal/enums"
 )
 
+type RespValue struct {
+	Type   enums.RespType
+	Str    string
+	Int    int64
+	Array  []*RespValue
+	Error  error
+	IsNull bool
+}
+
 type ParseResp struct {
-	result        constants.ResultType
-	value         string
-	isEmpty       bool
+	statusCode    enums.StatusCode
+	resp          *RespValue
 	bytesConsumed int
 	err           error
 }
 
 func getParseNeedMoreDataResp() ParseResp {
 	return ParseResp{
-		result:        constants.ResultTypeNeedMoreData,
+		statusCode:    enums.StatusCodeNeedMoreData,
 		bytesConsumed: 0,
 	}
 }
 
 func getParseErrorResp(err error) ParseResp {
 	return ParseResp{
-		result:        constants.ResultTypeError,
+		statusCode:    enums.StatusCodeError,
 		bytesConsumed: 0,
 		err:           err,
 	}
@@ -53,15 +62,21 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 			}
 		}
 		return ParseResp{
-			result:        constants.ResultTypeSuccess,
-			value:         string(bufferValue[:index]),
+			statusCode: enums.StatusCodeSuccess,
+			resp: &RespValue{
+				Type: enums.RespTypeString,
+				Str:  string(bufferValue[:index]),
+			},
 			bytesConsumed: 1 + index + 2,
 		}
 
 	case '-':
 		return ParseResp{
-			result:        constants.ResultTypeSuccess,
-			value:         string(bufferValue[:index]),
+			statusCode: enums.StatusCodeSuccess,
+			resp: &RespValue{
+				Type:  enums.RespTypeError,
+				Error: fmt.Errorf(string(bufferValue[:index])),
+			},
 			bytesConsumed: 1 + index + 2,
 		}
 
@@ -91,9 +106,20 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 			}
 		}
 
+		val, err := strconv.Atoi(string(bufferValue[start:index]))
+		if err != nil {
+			return getParseErrorResp(fmt.Errorf("invalid integer"))
+		}
+		if sign == "-" {
+			val = val * -1
+		}
+
 		return ParseResp{
-			result:        constants.ResultTypeSuccess,
-			value:         sign + string(bufferValue[start:index]),
+			statusCode: enums.StatusCodeSuccess,
+			resp: &RespValue{
+				Type: enums.RespTypeInt,
+				Int:  int64(val),
+			},
 			bytesConsumed: 1 + index + 2,
 		}
 
@@ -105,7 +131,11 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		// null bulk string
 		if index == 2 && string(bufferValue[:index]) == "-1" {
 			return ParseResp{
-				result:        constants.ResultTypeSuccess,
+				statusCode: enums.StatusCodeSuccess,
+				resp: &RespValue{
+					Type:   enums.RespTypeString,
+					IsNull: true,
+				},
 				bytesConsumed: 1 + index + 2,
 			}
 		}
@@ -140,8 +170,10 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 				return getParseErrorResp(fmt.Errorf("invalid bulk string"))
 			}
 			return ParseResp{
-				result:        constants.ResultTypeSuccess,
-				isEmpty:       true,
+				statusCode: enums.StatusCodeSuccess,
+				resp: &RespValue{
+					Type: enums.RespTypeString,
+				},
 				bytesConsumed: 1 + index + 4,
 			}
 		}
@@ -153,8 +185,11 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		}
 
 		return ParseResp{
-			result:        constants.ResultTypeSuccess,
-			value:         string(bufferValue[payloadStart : payloadStart+length]),
+			statusCode: enums.StatusCodeSuccess,
+			resp: &RespValue{
+				Type: enums.RespTypeString,
+				Str:  string(bufferValue[payloadStart : payloadStart+length]),
+			},
 			bytesConsumed: 1 + index + 2 + length + 2,
 		}
 
@@ -164,9 +199,11 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 				return getParseErrorResp(fmt.Errorf("invalid array length"))
 			}
 			return ParseResp{
-				result:        constants.ResultTypeSuccess,
-				value:         "",
-				isEmpty:       true,
+				statusCode: enums.StatusCodeSuccess,
+				resp: &RespValue{
+					Type:  enums.RespTypeArray,
+					Array: []*RespValue{},
+				},
 				bytesConsumed: 1 + index + 2,
 			}
 		}
@@ -174,8 +211,11 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		if bufferValue[0] == '-' {
 			if bufferValue[1] == '1' && len(bufferValue[:index]) == 2 {
 				return ParseResp{
-					result:        constants.ResultTypeSuccess,
-					value:         "",
+					statusCode: enums.StatusCodeSuccess,
+					resp: &RespValue{
+						Type:   enums.RespTypeArray,
+						IsNull: true,
+					},
 					bytesConsumed: 1 + index + 2,
 				}
 			}
@@ -192,20 +232,25 @@ func checkBuffer(typeByte byte, index int, bufferValue []byte) ParseResp {
 		}
 
 		totalConsumed := 1 + index + 2
+		respValue := make([]*RespValue, 0, length)
 		for i := 0; i < length; i++ {
-			resp := Parse(bufferValue[index+2:])
-			if resp.result == constants.ResultTypeError {
-				return getParseErrorResp(resp.err)
+			response := Parse(bufferValue[index+2:])
+			if response.statusCode == enums.StatusCodeError {
+				return getParseErrorResp(response.err)
 			}
-			if resp.result == constants.ResultTypeNeedMoreData {
+			if response.statusCode == enums.StatusCodeNeedMoreData {
 				return getParseNeedMoreDataResp()
 			}
-			totalConsumed += resp.bytesConsumed
+			totalConsumed += response.bytesConsumed
+			respValue = append(respValue, response.resp)
 		}
 
 		return ParseResp{
-			result:        constants.ResultTypeSuccess,
-			value:         "",
+			statusCode: enums.StatusCodeSuccess,
+			resp: &RespValue{
+				Type:  enums.RespTypeArray,
+				Array: respValue,
+			},
 			bytesConsumed: totalConsumed,
 		}
 
