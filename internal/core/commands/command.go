@@ -36,7 +36,7 @@ func HandlerPing(command Command, _ map[string]string) common.RespValue {
 	if len(command.Args) != 0 {
 		return common.RespValue{
 			Type: enums.ErrorRespType,
-			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
+			Str:  common.WrongNumberOfArgumentsError(command.Name),
 		}
 	}
 	return common.RespValue{
@@ -49,7 +49,7 @@ func HandlerEcho(command Command, _ map[string]string) common.RespValue {
 	if len(command.Args) != 1 {
 		return common.RespValue{
 			Type: enums.ErrorRespType,
-			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
+			Str:  common.WrongNumberOfArgumentsError(command.Name),
 		}
 	}
 
@@ -64,7 +64,7 @@ func HandlerSet(command Command, store map[string]string) common.RespValue {
 	if len(command.Args) != 2 {
 		return common.RespValue{
 			Type: enums.ErrorRespType,
-			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
+			Str:  common.WrongNumberOfArgumentsError(command.Name),
 		}
 	}
 	store[command.Args[0]] = command.Args[1]
@@ -78,7 +78,7 @@ func HandlerGet(command Command, store map[string]string) common.RespValue {
 	if len(command.Args) != 1 {
 		return common.RespValue{
 			Type: enums.ErrorRespType,
-			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
+			Str:  common.WrongNumberOfArgumentsError(command.Name),
 		}
 	}
 	value, exists := store[command.Args[0]]
@@ -98,7 +98,7 @@ func HandlerIncr(command Command, store map[string]string) common.RespValue {
 	if len(command.Args) != 1 {
 		return common.RespValue{
 			Type: enums.ErrorRespType,
-			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
+			Str:  common.WrongNumberOfArgumentsError(command.Name),
 		}
 	}
 	value, exists := store[command.Args[0]]
@@ -124,7 +124,7 @@ func HandlerDel(command Command, store map[string]string) common.RespValue {
 	if len(command.Args) != 1 {
 		return common.RespValue{
 			Type: enums.ErrorRespType,
-			Str:  common.WrongNumberOfArgumentsError(command.Args[0]),
+			Str:  common.WrongNumberOfArgumentsError(command.Name),
 		}
 	}
 	_, exists := store[command.Args[0]]

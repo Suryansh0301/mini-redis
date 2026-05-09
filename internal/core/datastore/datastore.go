@@ -19,9 +19,10 @@ type Value struct {
 }
 
 func NewExecutor() *Executor {
-	dataStore := make(map[string]string)
-	executorChan := make(chan Value, 1024)
-	return &Executor{dataStore, executorChan}
+	return &Executor{
+		dataStore:    make(map[string]string),
+		ExecutorChan: make(chan Value, 1024),
+	}
 }
 
 func (e *Executor) Execute(command commands.Command) common.RespValue {

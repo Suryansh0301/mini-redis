@@ -2,22 +2,24 @@ package main
 
 import (
 	"bufio"
-	"fmt"
+	"io"
 	"log/slog"
 	"net"
+	"sync"
 
 	"github.com/suryansh0301/mini-redis/internal/core/common"
 	"github.com/suryansh0301/mini-redis/internal/core/datastore"
 	parser "github.com/suryansh0301/mini-redis/internal/core/protocol/resp"
+	"github.com/suryansh0301/mini-redis/internal/enums"
 )
 
 type client struct {
-	Reader       *bufio.Reader
-	Writer       *bufio.Writer
-	ResponseChan chan common.RespValue
-	ParserBuffer []byte
-	ReadBuffer   []byte
-	WriteBuffer  []byte
+	reader         *bufio.Reader
+	writer         *bufio.Writer
+	responseChan   chan common.RespValue
+	pendingRequest sync.WaitGroup
+	parserBuffer   []byte
+	readBuffer     []byte
 }
 
 func newClient(connection net.Conn) *client {
@@ -25,17 +27,16 @@ func newClient(connection net.Conn) *client {
 	writer := bufio.NewWriter(connection)
 
 	return &client{
-		Reader:       reader,
-		Writer:       writer,
-		ResponseChan: make(chan common.RespValue, 256),
-		ParserBuffer: make([]byte, 0, 4096),
-		ReadBuffer:   make([]byte, 1024, 4096),
-		WriteBuffer:  make([]byte, 1024, 4096),
+		reader:       reader,
+		writer:       writer,
+		responseChan: make(chan common.RespValue, 256),
+		parserBuffer: make([]byte, 0, 4096),
+		readBuffer:   make([]byte, 1024, 4096),
 	}
 }
 
 func (c *client) read() (int, error) {
-	n, err := c.Reader.Read(c.ReadBuffer)
+	n, err := c.reader.Read(c.readBuffer)
 	if err != nil {
 		return 0, err
 	}
@@ -43,11 +44,11 @@ func (c *client) read() (int, error) {
 }
 
 func (c *client) appendParseBuffer(n int) {
-	c.ParserBuffer = append(c.ParserBuffer, c.ReadBuffer[:n]...)
+	c.parserBuffer = append(c.parserBuffer, c.readBuffer[:n]...)
 }
 
 func main() {
-	listener, err := net.Listen("tcp", ":8080")
+	listener, err := net.Listen("tcp", ":6379")
 	if err != nil {
 		panic(err)
 	}
@@ -59,10 +60,10 @@ func main() {
 	go func() {
 		for value := range exec.ExecutorChan {
 			response := exec.Execute(value.Command)
+
 			value.ResponseChan <- response
 		}
 	}()
-
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -75,41 +76,45 @@ func main() {
 }
 
 func (c *client) handleConnection(conn net.Conn, exec *datastore.Executor) {
-
 	defer conn.Close()
+	defer func() {
+		c.drainRequests()
+		close(c.responseChan)
+	}()
 
 	go func() {
-		for resp := range c.ResponseChan {
+		for resp := range c.responseChan {
 			byteResp := parser.Encoder(resp)
-			c.WriteBuffer = append(c.WriteBuffer, byteResp...)
-			n, err := c.Writer.Write(c.WriteBuffer)
+			_, err := c.writer.Write(byteResp)
 			if err != nil {
-				return
+				slog.Info("encountered error while writing", "error", err.Error())
 			}
-			if n > 0 {
-				err = c.Writer.Flush()
-				if err != nil {
-					return
-				}
+
+			err = c.writer.Flush()
+			if err != nil {
+				slog.Info("encountered error while writing", "error", err.Error())
 			}
+
+			c.decreasePendingRequest()
 		}
 	}()
 
 	for {
 		n, err := c.read()
 		if err != nil {
+			if err != io.EOF {
+				c.handleError()
+			}
 			return
 		}
 
 		c.appendParseBuffer(n)
 
-		for len(c.ParserBuffer) > 0 {
-			response := parser.Parse(c.ParserBuffer)
+		for len(c.parserBuffer) > 0 {
+			response := parser.Parse(c.parserBuffer)
 			if response.Error() != nil {
 				// we receive an error response
-				if err = c.handleError(response.Error().Error()); err != nil {
-
-				}
+				c.handleError()
 				return
 			}
 
@@ -118,18 +123,17 @@ func (c *client) handleConnection(conn net.Conn, exec *datastore.Executor) {
 				break
 			}
 
-			c.ParserBuffer = c.ParserBuffer[response.BytesConsumed():]
+			c.parserBuffer = c.parserBuffer[response.BytesConsumed():]
 			value, err := parser.Decoder(response)
 			if err != nil {
-				if err = c.handleError(err.Error()); err != nil {
-
-				}
+				c.handleError()
 				return
 			}
 
+			c.increasePendingRequest()
 			exec.ExecutorChan <- datastore.Value{
 				Command:      value,
-				ResponseChan: c.ResponseChan,
+				ResponseChan: c.responseChan,
 			}
 
 		}
@@ -137,15 +141,23 @@ func (c *client) handleConnection(conn net.Conn, exec *datastore.Executor) {
 
 }
 
-func (c *client) handleError(errMessage string) error {
-	response := fmt.Sprintf("-ERR %s\r\n", errMessage)
-	_, err := c.Writer.Write([]byte(response))
-	if err != nil {
-		return err
+func (c *client) handleError() {
+	responseErr := common.RespValue{
+		Type: enums.ErrorRespType,
+		Str:  "ERR Protocol error",
 	}
-	err = c.Writer.Flush()
-	if err != nil {
-		return err
-	}
-	return nil
+	c.increasePendingRequest()
+	c.responseChan <- responseErr
+}
+
+func (c *client) increasePendingRequest() {
+	c.pendingRequest.Add(1)
+}
+
+func (c *client) decreasePendingRequest() {
+	c.pendingRequest.Done()
+}
+
+func (c *client) drainRequests() {
+	c.pendingRequest.Wait()
 }
