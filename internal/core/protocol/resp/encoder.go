@@ -24,6 +24,9 @@ func init() {
 	}
 
 	encoderHandler[enums.BulkStringRespType] = func(value common.RespValue) []byte {
+		if value.IsNull {
+			return []byte("$-1\r\n")
+		}
 		response := fmt.Sprintf("$%s\r\n%s\r\n", strconv.Itoa(len(value.Str)), value.Str)
 		return []byte(response)
 	}
