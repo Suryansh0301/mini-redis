@@ -3,6 +3,7 @@ package resp
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/suryansh0301/mini-redis/internal/core/common"
 	"github.com/suryansh0301/mini-redis/internal/enums"
 )
@@ -27,12 +28,8 @@ func TestDecoderPing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cmd.Name != "PING" {
-		t.Fatalf("expected PING got %q", cmd.Name)
-	}
-	if len(cmd.Args) != 0 {
-		t.Fatalf("expected no args got %v", cmd.Args)
-	}
+	assert.Equal(t, "PING", cmd.Name)
+	assert.Equal(t, 0, len(cmd.Args))
 }
 
 func TestDecoderSet(t *testing.T) {
@@ -49,12 +46,10 @@ func TestDecoderSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cmd.Name != "SET" {
-		t.Fatalf("expected SET got %q", cmd.Name)
-	}
-	if len(cmd.Args) != 2 || cmd.Args[0] != "foo" || cmd.Args[1] != "bar" {
-		t.Fatalf("unexpected args %v", cmd.Args)
-	}
+	assert.Equal(t, "SET", cmd.Name)
+	assert.Equal(t, 2, len(cmd.Args))
+	assert.Equal(t, "foo", cmd.Args[0])
+	assert.Equal(t, "bar", cmd.Args[1])
 }
 
 func TestDecoderCaseInsensitive(t *testing.T) {
@@ -73,9 +68,7 @@ func TestDecoderCaseInsensitive(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cmd.Name != "PING" {
-				t.Fatalf("expected PING got %q", cmd.Name)
-			}
+			assert.Equal(t, "PING", cmd.Name)
 		})
 	}
 }
@@ -153,9 +146,7 @@ func TestDecoderErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := Decoder(tt.input)
-			if err == nil {
-				t.Fatal("expected error but got none")
-			}
+			assert.Error(t, err)
 		})
 	}
 }

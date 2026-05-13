@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"math"
 	"strconv"
 
 	"github.com/suryansh0301/mini-redis/internal/core/common"
@@ -105,6 +106,7 @@ func HandlerIncr(command Command, store map[string]string) common.RespValue {
 	if !exists {
 		value = "0"
 	}
+
 	integer, err := strconv.Atoi(value)
 	if err != nil {
 		return common.RespValue{
@@ -112,6 +114,14 @@ func HandlerIncr(command Command, store map[string]string) common.RespValue {
 			Str:  "ERR value is not an integer or out of range",
 		}
 	}
+
+	if integer == math.MaxInt64 {
+		return common.RespValue{
+			Type: enums.ErrorRespType,
+			Str:  "ERR value is not an integer or out of range",
+		}
+	}
+
 	integer = integer + 1
 	store[command.Args[0]] = strconv.Itoa(integer)
 	return common.RespValue{

@@ -3,12 +3,12 @@ package commands
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/suryansh0301/mini-redis/internal/core/common"
 	"github.com/suryansh0301/mini-redis/internal/enums"
 )
 
-// ── Helpers ──────────────────────────────────────────────────────
-
+// Helpers
 func makeStore(pairs ...string) map[string]string {
 	store := make(map[string]string)
 	for i := 0; i+1 < len(pairs); i += 2 {
@@ -16,52 +16,6 @@ func makeStore(pairs ...string) map[string]string {
 	}
 	return store
 }
-
-func assertOK(t *testing.T, resp common.RespValue) {
-	t.Helper()
-	if resp.Type != enums.SimpleStringRespType || resp.Str != "OK" {
-		t.Fatalf("expected +OK got %+v", resp)
-	}
-}
-
-func assertError(t *testing.T, resp common.RespValue, expectedMsg string) {
-	t.Helper()
-	if resp.Type != enums.ErrorRespType {
-		t.Fatalf("expected error type got %+v", resp)
-	}
-	if resp.Str != expectedMsg {
-		t.Fatalf("expected error %q got %q", expectedMsg, resp.Str)
-	}
-}
-
-func assertBulkString(t *testing.T, resp common.RespValue, expected string) {
-	t.Helper()
-	if resp.Type != enums.BulkStringRespType {
-		t.Fatalf("expected bulk string got %+v", resp)
-	}
-	if resp.Str != expected {
-		t.Fatalf("expected %q got %q", expected, resp.Str)
-	}
-}
-
-func assertNullBulk(t *testing.T, resp common.RespValue) {
-	t.Helper()
-	if resp.Type != enums.BulkStringRespType || !resp.IsNull {
-		t.Fatalf("expected null bulk string got %+v", resp)
-	}
-}
-
-func assertInteger(t *testing.T, resp common.RespValue, expected int64) {
-	t.Helper()
-	if resp.Type != enums.IntRespType {
-		t.Fatalf("expected integer got %+v", resp)
-	}
-	if resp.Int != expected {
-		t.Fatalf("expected %d got %d", expected, resp.Int)
-	}
-}
-
-// ── PING ─────────────────────────────────────────────────────────
 
 func TestPing(t *testing.T) {
 	tests := []struct {
@@ -86,17 +40,15 @@ func TestPing(t *testing.T) {
 			cmd := Command{Name: "PING", Args: tt.args}
 			resp := HandlerPing(cmd, nil)
 			if tt.expectError {
-				assertError(t, resp, common.WrongNumberOfArgumentsError("PING"))
+				assert.Equal(t, enums.ErrorRespType, resp.Type)
+				assert.Equal(t, common.WrongNumberOfArgumentsError("PING"), resp.Str)
 			} else {
-				if resp.Type != enums.SimpleStringRespType || resp.Str != "PONG" {
-					t.Fatalf("expected PONG got %+v", resp)
-				}
+				assert.Equal(t, enums.SimpleStringRespType, resp.Type)
+				assert.Equal(t, "PONG", resp.Str)
 			}
 		})
 	}
 }
-
-// ── ECHO ─────────────────────────────────────────────────────────
 
 func TestEcho(t *testing.T) {
 	tests := []struct {
@@ -127,15 +79,15 @@ func TestEcho(t *testing.T) {
 			cmd := Command{Name: "ECHO", Args: tt.args}
 			resp := HandlerEcho(cmd, nil)
 			if tt.expectError {
-				assertError(t, resp, common.WrongNumberOfArgumentsError("ECHO"))
+				assert.Equal(t, enums.ErrorRespType, resp.Type)
+				assert.Equal(t, common.WrongNumberOfArgumentsError("ECHO"), resp.Str)
 			} else {
-				assertBulkString(t, resp, tt.expected)
+				assert.Equal(t, enums.BulkStringRespType, resp.Type)
+				assert.Equal(t, tt.expected, resp.Str)
 			}
 		})
 	}
 }
-
-// ── SET ──────────────────────────────────────────────────────────
 
 func TestSet(t *testing.T) {
 	tests := []struct {
@@ -170,18 +122,16 @@ func TestSet(t *testing.T) {
 			cmd := Command{Name: "SET", Args: tt.args}
 			resp := HandlerSet(cmd, store)
 			if tt.expectError {
-				assertError(t, resp, common.WrongNumberOfArgumentsError("SET"))
+				assert.Equal(t, enums.ErrorRespType, resp.Type)
+				assert.Equal(t, common.WrongNumberOfArgumentsError("SET"), resp.Str)
 			} else {
-				assertOK(t, resp)
-				if store[tt.args[0]] != tt.args[1] {
-					t.Fatalf("store not updated, expected %q got %q", tt.args[1], store[tt.args[0]])
-				}
+				assert.Equal(t, enums.SimpleStringRespType, resp.Type)
+				assert.Equal(t, "OK", resp.Str)
+				assert.Equal(t, tt.args[1], store[tt.args[0]])
 			}
 		})
 	}
 }
-
-// ── GET ──────────────────────────────────────────────────────────
 
 func TestGet(t *testing.T) {
 	tests := []struct {
@@ -223,17 +173,17 @@ func TestGet(t *testing.T) {
 			cmd := Command{Name: "GET", Args: tt.args}
 			resp := HandlerGet(cmd, tt.store)
 			if tt.expectError {
-				assertError(t, resp, common.WrongNumberOfArgumentsError("GET"))
+				assert.Equal(t, common.WrongNumberOfArgumentsError("GET"), resp.Str)
 			} else if tt.expectNull {
-				assertNullBulk(t, resp)
+				assert.Equal(t, enums.BulkStringRespType, resp.Type)
+				assert.True(t, resp.IsNull)
 			} else {
-				assertBulkString(t, resp, tt.expected)
+				assert.Equal(t, enums.BulkStringRespType, resp.Type)
+				assert.Equal(t, tt.expected, resp.Str)
 			}
 		})
 	}
 }
-
-// ── INCR ─────────────────────────────────────────────────────────
 
 func TestIncr(t *testing.T) {
 	tests := []struct {
@@ -249,6 +199,13 @@ func TestIncr(t *testing.T) {
 			store:    makeStore("counter", "5"),
 			args:     []string{"counter"},
 			expected: 6,
+		},
+		{
+			name:        "max int64 overflow",
+			store:       makeStore("counter", "9223372036854775807"),
+			args:        []string{"counter"},
+			expectError: true,
+			errorMsg:    "ERR value is not an integer or out of range",
 		},
 		{
 			name:     "missing key starts at 0",
@@ -284,15 +241,15 @@ func TestIncr(t *testing.T) {
 			cmd := Command{Name: "INCR", Args: tt.args}
 			resp := HandlerIncr(cmd, tt.store)
 			if tt.expectError {
-				assertError(t, resp, tt.errorMsg)
+				assert.Equal(t, enums.ErrorRespType, resp.Type)
+				assert.Equal(t, tt.errorMsg, resp.Str)
 			} else {
-				assertInteger(t, resp, tt.expected)
+				assert.Equal(t, enums.IntRespType, resp.Type)
+				assert.Equal(t, tt.expected, resp.Int)
 			}
 		})
 	}
 }
-
-// ── DEL ──────────────────────────────────────────────────────────
 
 func TestDel(t *testing.T) {
 	tests := []struct {
@@ -307,6 +264,11 @@ func TestDel(t *testing.T) {
 			store:    makeStore("foo", "bar"),
 			args:     []string{"foo"},
 			expected: 1,
+		},
+		{
+			name:        "multiple keys not supported yet",
+			args:        []string{"foo", "bar"},
+			expectError: true,
 		},
 		{
 			name:     "missing key",
@@ -333,9 +295,11 @@ func TestDel(t *testing.T) {
 			cmd := Command{Name: "DEL", Args: tt.args}
 			resp := HandlerDel(cmd, tt.store)
 			if tt.expectError {
-				assertError(t, resp, common.WrongNumberOfArgumentsError("DEL"))
+				assert.Equal(t, enums.ErrorRespType, resp.Type)
+				assert.Equal(t, common.WrongNumberOfArgumentsError("DEL"), resp.Str)
 			} else {
-				assertInteger(t, resp, tt.expected)
+				assert.Equal(t, enums.IntRespType, resp.Type)
+				assert.Equal(t, tt.expected, resp.Int)
 				if tt.expected == 1 {
 					if _, exists := tt.store[tt.args[0]]; exists {
 						t.Fatal("key should have been deleted from store")

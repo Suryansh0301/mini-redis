@@ -3,6 +3,7 @@ package datastore
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/suryansh0301/mini-redis/internal/core/commands"
 	"github.com/suryansh0301/mini-redis/internal/enums"
 )
@@ -16,13 +17,10 @@ func makeCommand(name string, args ...string) commands.Command {
 func TestExecuteUnknownCommand(t *testing.T) {
 	exec := NewExecutor()
 	resp := exec.Execute(makeCommand("INVALID"))
-	if resp.Type != enums.ErrorRespType {
-		t.Fatalf("expected error type got %+v", resp)
-	}
+	assert.Equal(t, enums.ErrorRespType, resp.Type)
+
 	expected := "ERR unknown command 'INVALID'"
-	if resp.Str != expected {
-		t.Fatalf("expected %q got %q", expected, resp.Str)
-	}
+	assert.Equal(t, expected, resp.Str)
 }
 
 // ── PING ──────────────────────────────────────────────────────────
@@ -30,9 +28,8 @@ func TestExecuteUnknownCommand(t *testing.T) {
 func TestExecutePing(t *testing.T) {
 	exec := NewExecutor()
 	resp := exec.Execute(makeCommand("PING"))
-	if resp.Type != enums.SimpleStringRespType || resp.Str != "PONG" {
-		t.Fatalf("expected PONG got %+v", resp)
-	}
+	assert.Equal(t, enums.SimpleStringRespType, resp.Type)
+	assert.Equal(t, "PONG", resp.Str)
 }
 
 // ── SET / GET ─────────────────────────────────────────────────────
@@ -42,21 +39,17 @@ func TestExecuteSetGet(t *testing.T) {
 
 	// SET
 	setResp := exec.Execute(makeCommand("SET", "foo", "bar"))
-	if setResp.Type != enums.SimpleStringRespType || setResp.Str != "OK" {
-		t.Fatalf("expected OK got %+v", setResp)
-	}
+	assert.Equal(t, enums.SimpleStringRespType, setResp.Type)
+	assert.Equal(t, "OK", setResp.Str)
 
 	// GET existing
 	getResp := exec.Execute(makeCommand("GET", "foo"))
-	if getResp.Type != enums.BulkStringRespType || getResp.Str != "bar" {
-		t.Fatalf("expected bar got %+v", getResp)
-	}
+	assert.Equal(t, enums.BulkStringRespType, getResp.Type)
+	assert.Equal(t, "bar", getResp.Str)
 
 	// GET missing
 	getMissing := exec.Execute(makeCommand("GET", "missing"))
-	if !getMissing.IsNull {
-		t.Fatalf("expected null bulk string got %+v", getMissing)
-	}
+	assert.True(t, getMissing.IsNull)
 }
 
 // ── INCR ──────────────────────────────────────────────────────────
@@ -66,22 +59,17 @@ func TestExecuteIncr(t *testing.T) {
 
 	// INCR missing key — should start from 0
 	resp := exec.Execute(makeCommand("INCR", "counter"))
-	if resp.Type != enums.IntRespType || resp.Int != 1 {
-		t.Fatalf("expected 1 got %+v", resp)
-	}
+	assert.Equal(t, enums.IntRespType, resp.Type)
+	assert.Equal(t, 1, resp.Int)
 
 	// INCR again
 	resp = exec.Execute(makeCommand("INCR", "counter"))
-	if resp.Int != 2 {
-		t.Fatalf("expected 2 got %+v", resp)
-	}
+	assert.Equal(t, 2, resp.Int)
 
 	// INCR non integer
 	exec.Execute(makeCommand("SET", "foo", "bar"))
 	resp = exec.Execute(makeCommand("INCR", "foo"))
-	if resp.Type != enums.ErrorRespType {
-		t.Fatalf("expected error got %+v", resp)
-	}
+	assert.Equal(t, enums.ErrorRespType, resp.Type)
 }
 
 // ── DEL ───────────────────────────────────────────────────────────
@@ -93,21 +81,16 @@ func TestExecuteDel(t *testing.T) {
 
 	// DEL existing
 	resp := exec.Execute(makeCommand("DEL", "foo"))
-	if resp.Type != enums.IntRespType || resp.Int != 1 {
-		t.Fatalf("expected 1 got %+v", resp)
-	}
+	assert.Equal(t, enums.IntRespType, resp.Type)
+	assert.Equal(t, 1, resp.Int)
 
 	// Verify deleted
 	getResp := exec.Execute(makeCommand("GET", "foo"))
-	if !getResp.IsNull {
-		t.Fatal("key should be deleted")
-	}
+	assert.True(t, getResp.IsNull)
 
 	// DEL missing
 	resp = exec.Execute(makeCommand("DEL", "foo"))
-	if resp.Int != 0 {
-		t.Fatalf("expected 0 got %+v", resp)
-	}
+	assert.Equal(t, 0, resp.Int)
 }
 
 // ── State isolation ───────────────────────────────────────────────
@@ -120,7 +103,5 @@ func TestExecutorStateIsolation(t *testing.T) {
 	exec1.Execute(makeCommand("SET", "foo", "bar"))
 
 	resp := exec2.Execute(makeCommand("GET", "foo"))
-	if !resp.IsNull {
-		t.Fatal("exec2 should not see exec1 data")
-	}
+	assert.True(t, resp.IsNull)
 }

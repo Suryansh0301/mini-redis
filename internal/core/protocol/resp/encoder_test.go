@@ -3,6 +3,7 @@ package resp
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/suryansh0301/mini-redis/internal/core/common"
 	"github.com/suryansh0301/mini-redis/internal/enums"
 )
@@ -33,9 +34,7 @@ func TestEncodeSimpleString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := string(Encoder(tt.input))
-			if result != tt.expected {
-				t.Fatalf("expected %q got %q", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -61,9 +60,7 @@ func TestEncodeError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := string(Encoder(tt.input))
-			if result != tt.expected {
-				t.Fatalf("expected %q got %q", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -94,9 +91,7 @@ func TestEncodeInteger(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := string(Encoder(tt.input))
-			if result != tt.expected {
-				t.Fatalf("expected %q got %q", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -127,9 +122,7 @@ func TestEncodeBulkString(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := string(Encoder(tt.input))
-			if result != tt.expected {
-				t.Fatalf("expected %q got %q", tt.expected, result)
-			}
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -146,12 +139,9 @@ func TestEncoderRoundTrip(t *testing.T) {
 	for _, v := range values {
 		encoded := Encoder(v)
 		parsed := Parse(encoded)
-		if parsed.Error() != nil {
-			t.Fatalf("round trip failed for %+v: %v", v, parsed.Error())
-		}
-		if parsed.BytesConsumed() != len(encoded) {
-			t.Fatalf("round trip consumed %d bytes, expected %d", parsed.BytesConsumed(), len(encoded))
-		}
+
+		assert.NoError(t, parsed.Error())
+		assert.Equal(t, len(encoded), parsed.BytesConsumed())
 	}
 }
 
@@ -161,9 +151,7 @@ func TestEncodeBulkStringNull(t *testing.T) {
 		Type:   enums.BulkStringRespType,
 		IsNull: true,
 	}))
-	if result != "$-1\r\n" {
-		t.Fatalf("expected $-1 got %q", result)
-	}
+	assert.Equal(t, "$-1\r\n", result)
 }
 
 // Empty string is NOT null
@@ -172,7 +160,5 @@ func TestEncodeBulkStringEmpty(t *testing.T) {
 		Type: enums.BulkStringRespType,
 		Str:  "",
 	}))
-	if result != "$0\r\n\r\n" {
-		t.Fatalf("expected $0 got %q", result)
-	}
+	assert.Equal(t, "$0\r\n\r\n", result)
 }
