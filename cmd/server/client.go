@@ -31,7 +31,7 @@ func newClient(connection net.Conn) *client {
 		writer:       writer,
 		responseChan: make(chan common.RespValue, 256),
 		parserBuffer: make([]byte, 0, 4096),
-		readBuffer:   make([]byte, 1024, 4096),
+		readBuffer:   make([]byte, 4096),
 	}
 }
 
@@ -89,6 +89,11 @@ func (c *client) handleReads(exec *datastore.Executor) {
 			}
 
 			c.parserBuffer = c.parserBuffer[response.BytesConsumed():]
+
+			if len(c.parserBuffer) == 0 {
+				c.parserBuffer = c.parserBuffer[:0]
+			}
+
 			value, err := parser.Decoder(response)
 			if err != nil {
 				c.handleError()
