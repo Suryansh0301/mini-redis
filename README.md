@@ -1,221 +1,143 @@
-# 🟥 Mini Redis (Go)
+# Mnemo — In-Memory Data Store in Go
 
-A production-grade Redis clone built from scratch in Go.
+A production-grade Redis-compatible in-memory data store, built from scratch in Go.
 
-This project demonstrates systems-level thinking, streaming TCP parsing, protocol correctness (RESP2), clean layered architecture, and secure containerization practices.
-
----
-
-## 🚀 Highlights
-
-- 🔹 Streaming-safe RESP2 parser (handles partial TCP reads)
-- 🔹 Recursive array parsing with exact byte accounting
-- 🔹 Clean layered architecture (Parser → Decoder → Executor → Encoder)
-- 🔹 Command routing with handler injection
-- 🔹 Protocol-accurate RESP encoding
-- 🔹 Multi-stage Docker build (distroless runtime)
-- 🔹 SBOM & provenance ready (supply-chain aware)
+Mnemo implements the RESP2 protocol over raw TCP, handles concurrent clients through a single-threaded executor model, and is designed with correctness, performance, and observability as first-class concerns.
 
 ---
 
-## 🧠 System Architecture
+## Architecture
 
 ```
-                    ┌────────────────────┐
-                    │     TCP Socket     │
-                    └─────────┬──────────┘
+  Client A ─┐
+  Client B ─┤──► goroutine per client
+  Client C ─┘         │
+                       │  reads from TCP stream
+                       ▼
+             ┌──────────────────┐
+             │  RESP2 Parser    │  TCP byte stream → RespValue
+             └────────┬─────────┘
+                      │
+                      ▼
+             ┌──────────────────┐
+             │    Decoder       │  RespValue → Command
+             └────────┬─────────┘
+                      │
+                      ▼
+             ┌──────────────────────────────────┐
+             │     Executor Channel             │  bounded, size 1024
+             └────────────────┬─────────────────┘
+                              │  single goroutine
+                              ▼
+             ┌──────────────────────────────────┐
+             │     Command Executor             │  routes to handlers
+             └────────────────┬─────────────────┘
                               │
                               ▼
-                ┌──────────────────────────┐
-                │   Streaming RESP Parser  │
-                │  (bytes → RespValue)     │
-                └─────────┬────────────────┘
-                          │
-                          ▼
-                ┌──────────────────────────┐
-                │        Decoder           │
-                │ (RespValue → Command)    │
-                └─────────┬────────────────┘
-                          │
-                          ▼
-                ┌──────────────────────────┐
-                │        Executor          │
-                │   (Command Router)       │
-                └─────────┬────────────────┘
-                          │
-                          ▼
-                ┌──────────────────────────┐
-                │        Handlers          │
-                │  (Business Logic Layer)  │
-                └─────────┬────────────────┘
-                          │
-                          ▼
-                ┌──────────────────────────┐
-                │        Datastore         │
-                │    map[string]string     │
-                └─────────┬────────────────┘
-                          │
-                          ▼
-                ┌──────────────────────────┐
-                │         Encoder          │
-                │ (RespValue → bytes)      │
-                └─────────┬────────────────┘
-                          │
-                          ▼
-                    ┌────────────────────┐
-                    │     TCP Write      │
-                    └────────────────────┘
+             ┌──────────────────────────────────┐
+             │     Handlers + Datastore         │  business logic
+             └────────────────┬─────────────────┘
+                              │
+                              ▼
+             ┌──────────────────────────────────┐
+             │     Encoder                      │  RespValue → bytes
+             └────────────────┬─────────────────┘
+                              │
+                              ▼
+                   TCP Write (per client)
 ```
 
-Each layer has a single responsibility and is independently testable.
+Each layer has a single responsibility and is independently testable. The single-threaded executor eliminates lock contention on the datastore entirely — concurrency is handled at the I/O layer, not the execution layer.
 
 ---
 
-## 📡 Protocol Correctness (RESP2)
+## Protocol Support (RESP2)
 
-Implemented according to the official Redis specification:
+Implemented against the official Redis protocol specification.
 
-https://redis.io/docs/latest/develop/reference/protocol-spec/
+| Type          | Wire Format                              |
+|---------------|------------------------------------------|
+| Simple String | `+OK\r\n`                                |
+| Error         | `-ERR message\r\n`                       |
+| Integer       | `:1000\r\n`                              |
+| Bulk String   | `$5\r\nhello\r\n`                        |
+| Null Bulk     | `$-1\r\n`                                |
+| Array         | `*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n`      |
 
-### Supported RESP Types
-
-| Type            | Example                         |
-|-----------------|---------------------------------|
-| Simple String  | `+OK\r\n`                       |
-| Error          | `-ERR message\r\n`              |
-| Integer        | `:1000\r\n`                     |
-| Bulk String    | `$5\r\nhello\r\n`               |
-| Null Bulk      | `$-1\r\n`                       |
-| Array          | `*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n` |
-
-Correct distinction is maintained between:
-
-- Simple strings (`+OK`)
-- Bulk strings (`$len\r\nvalue\r\n`)
-- Null bulk (`$-1`)
-- Empty bulk (`$0\r\n\r\n`)
+The parser treats TCP as a continuous byte stream with no assumptions about message boundaries. Every parse attempt returns one of three states: `Success`, `NeedMoreData`, or `ProtocolError`, with exact byte accounting for safe buffer advancement.
 
 ---
 
-## 🔁 Streaming Parser Design
+## Implemented Commands
 
-TCP is treated as a continuous byte stream:
+| Command          | Response       |
+|------------------|----------------|
+| `PING`           | `+PONG`        |
+| `SET key value`  | `+OK`          |
+| `GET key`        | Bulk string    |
+| `GET missing`    | Null bulk      |
+| `INCR key`       | Integer        |
+| `DEL key`        | Integer        |
+| `ECHO value`     | Bulk string    |
 
-- No assumptions about message boundaries
-- Handles partial reads
-- Returns:
-    - `Success`
-    - `NeedMoreData`
-    - `ProtocolError`
-- Maintains exact `bytesConsumed`
+---
 
-Example (bulk string availability check):
+## Performance
 
-```go
-payloadStart := index + 2
-required := payloadStart + length + 2
+Benchmarked using `redis-benchmark` against a local instance. Numbers reflect a development machine and will vary by hardware. The table below documents the optimization progression, not an absolute performance claim.
 
-if len(bufferValue) < required {
-    return getParseNeedMoreDataResp()
-}
+```bash
+# Baseline — no pipeline
+redis-benchmark -p 6379 -c 50 -n 100000 -t set,get --dbnum 0 -q
+
+# Pipeline P16
+redis-benchmark -p 6379 -c 50 -n 100000 -t set,get --dbnum 0 -q -P 16
+
+# Pipeline P32
+redis-benchmark -p 6379 -c 50 -n 100000 -t set,get --dbnum 0 -q -P 32
+
+# High concurrency P8
+redis-benchmark -p 6379 -c 100 -n 100000 -t set,get --dbnum 0 -q -P 8
 ```
 
-References:
-- https://www.openmymind.net/2012/1/12/Reading-From-TCP-Streams/
-- https://stackoverflow.com/questions/9563563/what-is-a-message-boundary
+| Optimization                  | What Changed                                                                                      |
+|-------------------------------|---------------------------------------------------------------------------------------------------|
+| Baseline                      | Naive implementation, flush on every write                                                        |
+| Adaptive Flush                | Flush only when the response channel is empty, batching writes under load                         |
+| Buffer Pool (scratch space)   | Replaced `fmt.Sprintf` in encoder with append-based formatting; added `sync.Pool` for scratch buffers, reducing GC pressure while keeping exact-size final allocations |
+| Parser Buffer Reset           | `buf[:0]` slice reset to reuse underlying array across reads, avoiding fresh allocations          |
+| Executor Channel Size Tuning  | Tested 512, 1024, 2048, 4096; settled on 1024 as the optimal balance                             |
+
+**Results at pipeline depth P32 (SET / GET):**
+
+| Run | Pipeline Depth | SET ops/sec   | GET ops/sec   | SET p50   | GET p50   |
+|-----|----------------|---------------|---------------|-----------|-----------|
+| 1   | P1 (no pipeline) | ~70,000     | ~70,000       | ~0.40 ms  | ~0.40 ms  |
+| 2   | P8             | ~800,000      | ~885,000      | ~0.50 ms  | ~0.48 ms  |
+| 3   | P32            | ~1,176,000    | ~1,315,000    | ~0.69 ms  | ~0.66 ms  |
+| 4   | P8 (c100)      | ~534,000      | ~529,000      | ~0.78 ms  | ~0.79 ms  |
 
 ---
 
-## 🧩 Internal Representation (AST)
+## Testing
 
-All protocol data is represented using a structured internal AST:
+The project follows a tests-first approach. The suite covers:
 
-```go
-type RespValue struct {
-    Type   RespType
-    Str    string
-    Int    int64
-    Array  []*RespValue
-    Error  error
-    IsNull bool
-}
+- Unit tests — parser, encoder, decoder, handlers in isolation
+- Integration tests — full command round-trips over a real TCP connection
+- Fuzz tests — malformed and partial RESP input to the parser
+- Race detector — all tests run with `-race` to surface concurrency issues
+
+```bash
+go test ./... -race
+go test ./... -fuzz=FuzzParser
 ```
 
-### Design Notes
-
-- `Type` differentiates:
-    - Simple String
-    - Bulk String
-    - Integer
-    - Error
-    - Array
-- `Str` stores both simple and bulk string values.
-- `IsNull` differentiates:
-    - `$-1` (null bulk)
-    - `$0\r\n\r\n` (empty bulk)
-- `Array` enables recursive RESP parsing.
-- `Error` carries execution or protocol errors.
-
-Flow:
-
-- Parser → produces `RespValue`
-- Executor → returns `RespValue`
-- Encoder → serializes `RespValue`
-
-This mirrors the protocol exactly.
-
 ---
 
-## 📦 Implemented Commands
+## Containerization
 
-| Command | Behavior |
-|----------|----------|
-| `PING` | `+PONG` |
-| `SET key value` | `+OK` |
-| `GET key` | Bulk string |
-| `GET missing` | Null bulk |
-| `INCR key` | Integer reply |
-| `DEL key` | Integer reply |
-| `ECHO value` | Bulk string |
-
-Example execution routing:
-
-```go
-func (e *Executor) Execute(cmd Command) RespValue {
-    handler := CommandHandler(cmd.Name)
-    if handler == nil {
-        return ErrorResp("unknown command")
-    }
-    return handler(cmd, e.dataStore)
-}
-```
-
-Handlers operate directly on the datastore (`map[string]string`).
-
----
-
-## 🧱 Clean Command Routing
-
-The architecture separates:
-
-- Protocol parsing
-- Command decoding
-- Business logic
-- Data storage
-- Response encoding
-
-This allows:
-
-- Independent unit testing
-- Easy extensibility (TTL, persistence)
-- Clear separation of concerns
-- Maintainable codebase
-
----
-
-## 🐳 Containerization
-
-Multi-stage production build:
+Multi-stage build targeting a distroless runtime image.
 
 ```dockerfile
 FROM golang:1.22-alpine AS builder
@@ -230,70 +152,72 @@ USER nonroot:nonroot
 ENTRYPOINT ["./server"]
 ```
 
-### Why Distroless?
-
-- Minimal attack surface
-- No shell in runtime image
-- Reduced CVEs
-- Static Go binary
-
-Reference:
-https://github.com/GoogleContainerTools/distroless
+The runtime image contains no shell, no package manager, and no toolchain — only the compiled binary. Container integration testing is planned.
 
 ---
 
-## 🔐 Supply-Chain Awareness
+## Roadmap
 
-Supports:
-
-- SBOM generation (Syft)
-- Docker provenance attestations
-- Minimal runtime footprint
-
-References:
-- https://github.com/anchore/syft
-- https://docs.docker.com/build/attestations/
-
----
-
-## 📚 Learning References
-
-- RESP Specification  
-  https://redis.io/docs/latest/develop/reference/protocol-spec/
-
-- TCP Streams & Framing  
-  https://www.openmymind.net/2012/1/12/Reading-From-TCP-Streams/
-
-- Redis Internals  
-  https://redis.io/docs/latest/
-
-- Distroless Containers  
-  https://github.com/GoogleContainerTools/distroless
+| Phase | Focus                        | Status      |
+|-------|------------------------------|-------------|
+| 1     | Correctness and test suite   | Complete    |
+| 2     | Benchmarking and optimization| Complete    |
+| 3     | Backpressure and overload protection | In Progress |
+| 4     | Mnemo-CLI compatibility      | Planned     |
+| 5     | Data structures (Lists, Hashes, Sets) | Planned |
+| 6     | Persistence (AOF + RDB)      | Planned     |
+| 7     | Observability (structured logging, INFO, metrics) | Planned |
+| 8     | Transactions (MULTI/EXEC/WATCH) | Planned  |
+| 9     | Memory management (LRU, maxmemory, TTL expiry) | Planned |
 
 ---
 
-## 🎯 Future Work
+## References
 
-- TTL support
-- RDB persistence
-- Append-only file (AOF)
-- Event-loop I/O multiplexing
-- Concurrency safety
-- Benchmarking
-- Replication support
+**RESP Protocol & Redis Internals**
 
----
+- Redis Serialization Protocol (RESP) — https://redis.io/docs/latest/develop/reference/protocol-spec/
+- Redis Documentation — https://redis.io/docs/latest/
+- Redis Persistence (RDB & AOF) — https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/
+- Redis Performance Optimization — https://redis.io/docs/latest/operate/oss_and_stack/management/optimization/
+- Redis Event Library Internals — https://redis.io/docs/latest/operate/oss_and_stack/reference/internals/internals-rediseventlib/
 
-## 🏁 Status
+**TCP Streams & Message Framing**
 
-✔ Streaming RESP parser  
-✔ Recursive array parsing  
-✔ Protocol-accurate encoder  
-✔ Clean layered architecture  
-✔ Command execution layer  
-✔ Containerized (multi-stage + distroless)  
-✔ Security-aware design
+- OpenMyMind — Reading from TCP Streams — https://www.openmymind.net/2012/1/12/Reading-From-TCP-Streams/
+- StackOverflow — What is a message boundary? — https://stackoverflow.com/questions/9563563/what-is-a-message-boundary
+- Stephen Cleary — Message Framing — https://blog.stephencleary.com/2009/04/message-framing.html
+- Wikipedia — Transmission Control Protocol — https://en.wikipedia.org/wiki/Transmission_Control_Protocol
+- Wikipedia — Message Framing — https://en.wikipedia.org/wiki/Message_framing
 
----
+**Networking & I/O Multiplexing**
 
-Built as a systems engineering exercise focused on correctness, architecture, and production-grade backend design.
+- Beej's Guide to Network Programming — https://beej.us/guide/bgnet/html/
+- Wikipedia — I/O Multiplexing — https://en.wikipedia.org/wiki/I/O_multiplexing
+- Linux man pages — epoll — https://man7.org/linux/man-pages/man7/epoll.7.html
+
+**Redis Architecture & Systems Design**
+
+- StackOverflow — Why Redis is single-threaded — https://stackoverflow.com/questions/45364256/why-redis-is-single-threaded-event-driven
+- ByteByteGo — A Crash Course in Redis — https://blog.bytebytego.com/p/a-crash-course-in-redis
+- Medium — Redis Internals by Rebuilding It — https://skshmgpt.medium.com/redis-internals-understanding-it-by-rebuilding-it-e16d6dd102e2
+- Medium — What is Redis and how does it work internally — https://medium.com/@ayushsaxena823/what-is-redis-and-how-does-it-work-cfe2853eb9a9
+
+**Containerization**
+
+- Docker Docs — Multi-stage Builds — https://docs.docker.com/build/building/multi-stage/
+- Docker Docs — Dockerfile Reference — https://docs.docker.com/reference/dockerfile/
+- Google Distroless Containers — https://github.com/GoogleContainerTools/distroless
+- Docker Blog — Is Your Container Image Really Distroless? — https://www.docker.com/blog/is-your-container-image-really-distroless/
+- Medium — Alpine vs Distroless vs Scratch — https://medium.com/google-cloud/alpine-distroless-or-scratch-caac35250e0b
+
+**Testing & Correctness**
+
+- Go testing package — https://pkg.go.dev/testing
+- Go — Table Driven Tests — https://go.dev/wiki/TableDrivenTests
+- Go — Introducing the Race Detector — https://go.dev/blog/race-detector
+- Go — Data Race Detector reference — https://go.dev/doc/articles/race_detector
+- Go — Fuzzing documentation — https://go.dev/doc/fuzz/
+- Go — Getting started with fuzzing (tutorial) — https://go.dev/doc/tutorial/fuzz
+- Testify assertion library — https://github.com/stretchr/testify
+- GopherCon 2017 — Advanced Testing in Go (Mitchell Hashimoto) — https://www.youtube.com/watch?v=8hQG7QlcLBk
