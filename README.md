@@ -158,17 +158,19 @@ The runtime image contains no shell, no package manager, and no toolchain — on
 
 ## Roadmap
 
-| Phase | Focus                                             | Status      |
-| ----- | ------------------------------------------------- | ----------- |
-| 1     | Correctness and test suite                        | Complete    |
-| 2     | Benchmarking and optimization                     | Complete    |
-| 3     | Backpressure and overload protection              | Complete    |
-| 4     | Mnemo-CLI compatibility                           | In Progress |
-| 5     | Data structures (Lists, Hashes, Sets)             | Planned     |
-| 6     | Persistence (AOF + RDB)                           | Planned     |
-| 7     | Observability (structured logging, INFO, metrics) | Planned     |
-| 8     | Transactions (MULTI/EXEC/WATCH)                   | Planned     |
-| 9     | Memory management (LRU, maxmemory, TTL expiry)    | Planned     |
+| Phase | Focus                                                                 | Status      |
+| ----- | --------------------------------------------------------------------- | ----------- |
+| 1     | Correctness and test suite                                            | Complete    |
+| 2     | Benchmarking and optimization                                         | Complete    |
+| 3     | Backpressure and overload protection                                  | Complete    |
+| 4     | Mnemo-CLI — interactive REPL over RESP                                | In Progress |
+| 5     | Observability — structured logging, INFO command, internal metrics    | Planned     |
+| 6     | Memory management — LRU eviction, maxmemory, background TTL expiry    | Planned     |
+| 7     | Frontend dashboard — key browser, CRUD operations, server stats       | Planned     |
+| 8     | Containerization — server, CLI, and frontend as a single Docker image | Planned     |
+| 9     | Data structures — Lists, Hashes, Sets                                 | Planned     |
+| 10    | Persistence — AOF and RDB snapshots                                   | Planned     |
+| 11    | Transactions — MULTI, EXEC, WATCH                                     | Planned     |
 
 ---
 
